@@ -14,6 +14,7 @@ from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import random
 
+
 def training_loop(model, epochs, trainloader, loss_fn, optimizer, validation):
         training_start = time()
         for epoch in range(epochs):
@@ -26,8 +27,7 @@ def training_loop(model, epochs, trainloader, loss_fn, optimizer, validation):
                 img, label = data
                 out = model(img)
                 #print(out, label)
-                sigmoid = nn.Sigmoid()
-                loss = loss_fn((out), label)
+                loss = loss_fn(((out)), label)
                 if i % 100 == 0:
                     print(i)
                     print(f'loss value is {loss.item()}')
@@ -40,7 +40,6 @@ def training_loop(model, epochs, trainloader, loss_fn, optimizer, validation):
             print(f'epoch {epoch} validation')
             model.eval()
             testing_loop(model, validation)
-            torch.save(model.state_dict(), f'./models/Model{str(epoch)}.pth')
         training_end = time()
         print(f'training done in {int(training_end - training_start)} seconds, or {int(training_end - training_start) / 60} minutes')
         torch.save(model.state_dict(), './Model.pth')
@@ -55,10 +54,9 @@ def testing_loop(model,testloader):
             for data in testloader:
                 images, labels = data
                 # calculate outputs by running images through the network
-                sigmoid = nn.Sigmoid()
-                outputs = sigmoid(model(images.unsqueeze(0)))
-                preds = outputs > 0.45
-                print(preds)
+                outputs = (model(images.unsqueeze(0)))
+                print(outputs)
+                preds = outputs > 0.5
                 allpreds.append(preds.values)
                 total += 10
                 correct += (preds == labels).sum().item()
@@ -121,8 +119,8 @@ class Loader(data.Dataset):
 #         x = self.fc(x)
 #         return x
 
-model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=False)
-model.fc = nn.Linear(512, 10)
+model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet50', pretrained=True)
+model.fc = nn.Sequential(nn.Linear(2048, 10), nn.Sigmoid())
 print(model)
 model = model.to('cuda')
 
@@ -132,7 +130,7 @@ val_set = Loader(transforms=T.Compose([T.Resize((100,100)), T.ToTensor()]), vali
 img_loader = data.DataLoader(img_set,batch_size = 64, shuffle=True)
 
 #model = Model().to('cuda')
-loss = nn.BCEWithLogitsLoss()
+loss = nn.BCELoss()
 #model.load_state_dict(torch.load('./Model.pth'))
 
 training_loop(model, epochs=10, trainloader=img_loader,loss_fn=loss, optimizer=optim.SGD(params=model.parameters(),lr=0.001, weight_decay=5e-4, momentum=0.95), validation=val_set)
