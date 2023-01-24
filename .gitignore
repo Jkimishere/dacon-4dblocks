@@ -133,3 +133,6 @@ open.zip
 open/
 
 data/
+
+MNIST.py
+mnistre.py
