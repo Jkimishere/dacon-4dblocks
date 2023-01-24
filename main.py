@@ -1,19 +1,18 @@
 import os
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-
 import torch
 import torchvision
 import torchvision.transforms as T
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as data
+import torch.functional as F
 import pandas as pd
 from PIL import Image
 from time import time
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import random
-
 
 def training_loop(model, epochs, trainloader, loss_fn, optimizer, validation):
         training_start = time()
@@ -63,6 +62,22 @@ def testing_loop(model,testloader):
         print(f'total {total}, correct {correct}')
         return allpreds
 
+def prediction_loop(model, loader):
+    samplesubs = pd.read_csv('./data/sample_submission.csv')
+    allpreds = []
+    for data in loader:
+        images = data
+        outputs = (model(images))
+        preds = outputs > 0.5
+        preds = preds.cpu().tolist()
+        print(preds)
+        for i in preds[0]:
+            i = int(i)
+        print(preds)
+        allpreds.append(preds)
+    samplesubs.append(pd.DataFrame(allpreds).T)
+    return samplesubs
+        
 class Loader(data.Dataset):
     def __init__(self, transforms, validation=False) -> None:
         super().__init__()
@@ -85,58 +100,51 @@ class Loader(data.Dataset):
         tensor_image = self.transforms(image)
         tensor_label = torch.tensor(self.label[index],dtype=torch.float32)
         return tensor_image.to('cuda'), tensor_label.to('cuda')
-        
 
-
-# class Model(nn.Module):
-#     def __init__(self) -> None:
-#         super().__init__()
-#         self.conv = nn.Sequential(
-#             nn.Conv2d(3, 10, kernel_size=5), # 100x100x3 -> 96x96x10
-#             nn.ReLU(),
-#             nn.MaxPool2d(2), # 48 x 48 x 10
-#             nn.Conv2d(10, 30, 5), # 44x44x30
-#             nn.BatchNorm2d(30),
-#             nn.ReLU(),
-#             nn.MaxPool2d(2), # 22x22x30
-#             nn.Conv2d(30, 40, 5), # 18 * 18 * 40
-#             nn.BatchNorm2d(40),
-#             nn.ReLU(),
-#             nn.MaxPool2d(2),# 9 * 9 * 40
-#         )
-
-#         self.fc = nn.Sequential(
-#             nn.Linear(40*9*9,500),
-#             nn.ReLU(),
-#             nn.Linear(500, 100),
-#             nn.ReLU(),
-#             nn.Linear(100, 10),
-#             nn.Sigmoid(),
-#         )
-#     def forward(self, x):
-#         x = self.conv(x)
-#         x = torch.flatten(x,start_dim=1)
-#         x = self.fc(x)
-#         return x
 
 model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet50', pretrained=True)
 model.fc = nn.Sequential(nn.Linear(2048, 10), nn.Sigmoid())
-print(model)
+ct = 0
+for child in model.children():
+    ct += 1
+    if ct < 10:
+        for param in child.parameters():
+            param.requires_grad = False
+
 model = model.to('cuda')
 
-
-img_set = Loader(transforms=T.Compose([T.Resize((100,100)), T.RandomHorizontalFlip(), T.ToTensor(), T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]))
+img_set = Loader(transforms=T.Compose([T.Resize((100,100)), T.RandomHorizontalFlip(), T.ToTensor(), T.Normalize(([0.2687, 0.2129, 0.1901]), ([0.4584, 0.5564, 0.6069]))]))
 val_set = Loader(transforms=T.Compose([T.Resize((100,100)), T.ToTensor()]), validation=True)
 img_loader = data.DataLoader(img_set,batch_size = 64, shuffle=True)
 
 #model = Model().to('cuda')
-loss = nn.BCELoss()
+weights = torch.FloatTensor([0.55, 0.45])
+loss = nn.BCELoss(weight=weights, reduction='none')
 #model.load_state_dict(torch.load('./Model.pth'))
 
-training_loop(model, epochs=10, trainloader=img_loader,loss_fn=loss, optimizer=optim.SGD(params=model.parameters(),lr=0.001, weight_decay=5e-4, momentum=0.95), validation=val_set)
+training_loop(model, epochs=10, trainloader=img_loader,loss_fn=loss, optimizer=optim.SGD(params=model.parameters(),lr=1e-3, weight_decay=5e-4, momentum=0.9), validation=val_set)
 
 
 
-#model.eval()
+class pred_loader(data.Dataset):
+    def __init__(self) -> None:
+        super().__init__()
+        self.imgs = os.listdir('data/test')
+        self.transforms = T.Compose([T.Resize((100, 100)), T.ToTensor()])
+    def __len__(self):
+        return len(self.imgs)
+    
+    def __getitem__(self, index):
+        img_loc = os.path.join('./data/test', self.imgs[index])
+        image = Image.open(img_loc).convert("RGB") 
+        tensor_image = self.transforms(image)
+        return tensor_image.to('cuda')
 
-#a = testing_loop(model, val_set)
+
+# predset = pred_loader()
+# predloader = data.DataLoader(predset)
+# model.load_state_dict(torch.load('./Model.pth'))
+
+# a = prediction_loop(model,predloader)
+
+# a.to_csv('./predictions.csv')
